@@ -97,6 +97,13 @@ CONSOLE_HTML = """<!DOCTYPE html><html lang="en"><head>
     font-size:15px;cursor:pointer}
   .save:hover{filter:brightness(1.07)}
   .foot{color:#71738c;font-size:12px;margin-top:18px;text-align:center}
+  .chcount{font-size:12px;color:#8a8ca6;margin-bottom:12px}
+  .chwrap{columns:2;column-gap:22px}
+  .cat{font-size:11px;color:#8a8ca6;text-transform:uppercase;letter-spacing:.06em;font-weight:700;
+    margin:12px 0 4px;break-inside:avoid}
+  .cat:first-child{margin-top:0}
+  .ch{font-size:14px;color:#d7d9ec;padding:3px 0 3px 12px;break-inside:avoid}
+  .muted{color:#8a8ca6}
 </style></head><body>
   <div class="wrap">
     <div class="top">
@@ -117,6 +124,12 @@ CONSOLE_HTML = """<!DOCTYPE html><html lang="en"><head>
     </div>
 
     __FLASH__
+
+    <div class="panel">
+      <h2>🗂️ Channels &amp; Categories</h2>
+      <div class="chcount">__CHCOUNT__</div>
+      <div class="chwrap">__CHANNELS__</div>
+    </div>
 
     <form method="post" action="/save">
       <div class="panel">
@@ -280,6 +293,33 @@ class KeepAlive(commands.Cog):
             out.append(f'<option value="{iid}"{sel}>{html.escape(name)}</option>')
         return "".join(out)
 
+    @staticmethod
+    def _channel_icon(ch):
+        if isinstance(ch, discord.VoiceChannel):
+            return "🔊"
+        if isinstance(ch, discord.StageChannel):
+            return "🎤"
+        if isinstance(ch, discord.ForumChannel):
+            return "🗨️"
+        return "#"
+
+    def _channel_tree(self, guild):
+        """Render every category and its channels (plus uncategorized) as a read-only tree."""
+        def render(channels):
+            rows = ""
+            for c in sorted(channels, key=lambda c: c.position):
+                rows += f'<div class="ch">{self._channel_icon(c)} {html.escape(c.name)}</div>'
+            return rows
+
+        parts = []
+        uncategorized = [c for c in guild.channels
+                         if c.category is None and not isinstance(c, discord.CategoryChannel)]
+        if uncategorized:
+            parts.append('<div class="cat">📂 No category</div>' + render(uncategorized))
+        for category in guild.categories:
+            parts.append(f'<div class="cat">📁 {html.escape(category.name)}</div>' + render(category.channels))
+        return "".join(parts) or '<div class="muted">No channels found.</div>'
+
     def _render_console(self, guild, flash=""):
         cfg = load_config().get(str(guild.id), {})
         ar, an = cfg.get("antiraid", {}), cfg.get("antinuke", {})
@@ -298,6 +338,8 @@ class KeepAlive(commands.Cog):
             "__COMMANDS__": str(s["commands"]),
             "__UPTIME__": s["uptime"],
             "__FLASH__": flash,
+            "__CHCOUNT__": f"{len(guild.categories)} categories · {len(guild.channels) - len(guild.categories)} channels",
+            "__CHANNELS__": self._channel_tree(guild),
             "__SUB_OPTS__": self._opts(channels, cfg.get("submissions_channel")),
             "__LOG_OPTS__": self._opts(channels, cfg.get("log_channel")),
             "__VERIFY_OPTS__": self._opts(roles, cfg.get("verify_role")),
