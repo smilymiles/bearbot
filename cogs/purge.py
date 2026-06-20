@@ -25,40 +25,42 @@ class Purge(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def _do_purge(self, interaction, *, label, limit=None, check=None, after=None):
-        channel = interaction.channel
+    async def purge_messages(self, channel, guild, *, label, limit=None, check=None, after=None, moderator="Console"):
+        """Core purge logic shared by the slash commands and the web console. -> (ok, message)."""
         if not isinstance(channel, PURGEABLE):
-            await interaction.response.send_message(
-                "❌ I can't purge messages in this kind of channel.", ephemeral=True
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        kwargs = {"limit": limit, "reason": f"Purge by {interaction.user}"}
+            return False, "❌ I can't purge messages in this kind of channel."
+        kwargs = {"limit": limit, "reason": f"Purge by {moderator}"}
         if check is not None:
             kwargs["check"] = check
         if after is not None:
             kwargs["after"] = after
-
         try:
             deleted = await channel.purge(**kwargs)
         except discord.Forbidden:
-            await interaction.followup.send(
-                "❌ I need the **Manage Messages** permission in this channel.", ephemeral=True
-            )
-            return
+            return False, "❌ I need the **Manage Messages** permission in this channel."
         except discord.HTTPException as e:
-            await interaction.followup.send(f"⚠️ Purge failed: {e}", ephemeral=True)
-            return
+            return False, f"⚠️ Purge failed: {e}"
 
         n = len(deleted)
-        await interaction.followup.send(f"🧹 Deleted **{n}** message(s) — {label}.", ephemeral=True)
-
         embed = discord.Embed(title="🧹 Messages Purged", color=0x95A5A6, timestamp=discord.utils.utcnow())
         embed.add_field(name="Channel", value=channel.mention, inline=False)
-        embed.add_field(name="Moderator", value=str(interaction.user), inline=False)
+        embed.add_field(name="Moderator", value=str(moderator), inline=False)
         embed.add_field(name="Deleted", value=f"{n} — {label}", inline=False)
-        await send_log(interaction.guild, embed)
+        await send_log(guild, embed)
+        return True, f"🧹 Deleted **{n}** message(s) — {label}."
+
+    async def _do_purge(self, interaction, *, label, limit=None, check=None, after=None):
+        if not isinstance(interaction.channel, PURGEABLE):
+            await interaction.response.send_message(
+                "❌ I can't purge messages in this kind of channel.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        ok, msg = await self.purge_messages(
+            interaction.channel, interaction.guild, label=label, limit=limit,
+            check=check, after=after, moderator=str(interaction.user),
+        )
+        await interaction.followup.send(msg, ephemeral=True)
 
     @purge.command(name="channel", description="Delete the last N messages in this channel")
     @app_commands.checks.has_permissions(manage_messages=True)
