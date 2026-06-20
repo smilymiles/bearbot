@@ -126,15 +126,19 @@ class ServerSetup(commands.Cog):
                     except discord.HTTPException:
                         pass
 
-        # ── Post the verification panel ──────────────────────────────────────────
+        # ── Post the verification panel (exactly one — clean up any old ones) ─────
         try:
+            async for msg in verify_channel.history(limit=50):
+                if (msg.author.id == self.bot.user.id and msg.embeds
+                        and msg.embeds[0].title == "🔒 Verification"):
+                    await msg.delete()
             panel = discord.Embed(
                 title="🔒 Verification",
                 description="Click the button below to verify and gain access to the server.",
                 color=0x2ECC71,
             )
             await verify_channel.send(embed=panel, view=VerifyView())
-        except discord.Forbidden:
+        except discord.HTTPException:
             pass
 
         # ── Report ───────────────────────────────────────────────────────────────
