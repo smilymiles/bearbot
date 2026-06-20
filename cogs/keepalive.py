@@ -76,8 +76,9 @@ STYLE = """
   .panel h2{font-size:15px;margin-bottom:16px;color:#fff}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   label{display:block;font-size:12px;color:#a6a8c0;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
-  select,input[type=number],input[type=text],input[type=password]{width:100%;padding:10px 12px;border-radius:10px;
+  select,input[type=number],input[type=text],input[type=password],textarea{width:100%;padding:10px 12px;border-radius:10px;
     border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.25);color:#fff;font-size:14px;margin-bottom:12px}
+  textarea{resize:vertical;min-height:90px;font-family:inherit}
   .toggle{display:flex;align-items:center;gap:10px;margin-bottom:14px}
   .toggle input{width:18px;height:18px;margin:0}
   .toggle label{margin:0;text-transform:none;letter-spacing:0;font-size:14px;color:#e9eaf2}
@@ -188,6 +189,8 @@ class KeepAlive(commands.Cog):
             app.router.add_post("/mod/channel", self._mod_channel)
             app.router.add_post("/mod/purge", self._mod_purge)
             app.router.add_post("/mod/nick", self._mod_nick)
+            app.router.add_get("/say", self._say_page)
+            app.router.add_post("/say", self._say_send)
             app.router.add_get("/login", self._login_page)
             app.router.add_post("/login", self._login_submit)
             app.router.add_get("/logout", self._logout)
@@ -271,7 +274,7 @@ class KeepAlive(commands.Cog):
         }
 
     def _nav(self, active):
-        items = [("/", "Settings", "settings"), ("/moderation", "Moderation", "moderation")]
+        items = [("/", "Settings", "settings"), ("/moderation", "Moderation", "moderation"), ("/say", "Say", "say")]
         links = "".join(
             f'<a class="navlink{" active" if key == active else ""}" href="{href}">{label}</a>'
             for href, label, key in items
@@ -506,11 +509,43 @@ class KeepAlive(commands.Cog):
         return web.Response(text=self._page("moderation", guild, self._moderation_body(guild), self._flash(request)),
                             content_type="text/html")
 
+    # ── say page ──────────────────────────────────────────────────────────────
+    def _say_body(self, guild):
+        channels = [(c.id, "#" + c.name) for c in guild.text_channels]
+        chan_opts = self._opts(channels, None, include_none=False)
+        return f"""
+    <div class="panel"><h2>💬 Say in a channel</h2>
+      <form method="post" action="/say">
+        <label>Channel</label><select name="channel">{chan_opts}</select>
+        <label>Message</label><textarea name="message" rows="4" placeholder="What should I say?"></textarea>
+        <div class="toggle"><input type="checkbox" name="allow_pings" id="ap"><label for="ap">Allow @everyone / role pings</label></div>
+        <button class="save" type="submit">💬 Send Message</button>
+      </form></div>"""
+
+    async def _say_page(self, request):
+        guild = self._guild()
+        if guild is None:
+            return web.Response(text="<h1>Bot isn't connected to a server yet.</h1>", content_type="text/html")
+        return web.Response(text=self._page("say", guild, self._say_body(guild), self._flash(request)),
+                            content_type="text/html")
+
+    async def _say_send(self, request):
+        guild, data = self._guild(), await request.post()
+        ch = guild.get_channel(_to_int(data.get("channel"), 0)) if guild else None
+        if not ch:
+            self._flash_redirect("/say", False, "Pick a channel.")
+        ok, msg = await self.bot.get_cog("Utility").do_say(
+            ch, data.get("message"), allow_pings=(data.get("allow_pings") == "on"))
+        self._flash_redirect("/say", ok, msg)
+
     # ── moderation action handlers (reuse cog helpers) ────────────────────────
-    def _redirect(self, ok, msg):
+    def _flash_redirect(self, path, ok, msg):
         key = "ok" if ok else "err"
         clean = msg.replace("**", "").replace("`", "")
-        raise web.HTTPFound("/moderation?" + urlencode({key: clean}))
+        raise web.HTTPFound(path + "?" + urlencode({key: clean}))
+
+    def _redirect(self, ok, msg):
+        self._flash_redirect("/moderation", ok, msg)
 
     def _mod_cog(self):
         return self.bot.get_cog("Moderation")
