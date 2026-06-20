@@ -12,7 +12,9 @@ CATEGORIES = {
     "Purge": "🧹 Purge",
     "Admin": "👮 Roles & Bot",
     "Protection": "🛡️ Protection",
-    "Help": "ℹ️ Info",
+    "Info": "📊 Info",
+    "Utility": "🔧 Utility",
+    "Help": "ℹ️ Help",
 }
 ORDER = list(CATEGORIES.keys())
 

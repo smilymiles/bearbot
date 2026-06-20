@@ -1,11 +1,24 @@
-"""Moderation: ban/kick/warn + warning storage, log channel, and member join/leave logging."""
+"""Moderation: ban/kick/warn/timeout/unban + slowmode, nick, logging, and channel lock."""
+import re
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config_store import load_config, save_config, guild_config
 from utils import send_log
+
+_DURATION_RE = re.compile(r"(\d+)\s*([smhd])", re.IGNORECASE)
+_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def parse_duration(text):
+    """Parse a duration like '10m', '1h30m', '2d' into a timedelta. None if nothing valid."""
+    matches = _DURATION_RE.findall(text or "")
+    if not matches:
+        return None
+    seconds = sum(int(value) * _UNIT_SECONDS[unit.lower()] for value, unit in matches)
+    return timedelta(seconds=seconds) if seconds > 0 else None
 
 
 class Moderation(commands.Cog):
@@ -153,6 +166,120 @@ class Moderation(commands.Cog):
         embed.add_field(name="Moderator", value=str(interaction.user), inline=False)
         embed.add_field(name="Cleared", value=str(cleared), inline=False)
         await send_log(interaction.guild, embed)
+
+    @app_commands.command(name="timeout", description="Timeout (mute) a member for a duration like 10m, 1h, 2d")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    @app_commands.checks.bot_has_permissions(moderate_members=True)
+    @app_commands.describe(member="The member to time out", duration="How long: 30s, 10m, 1h, 2d (max 28d)", reason="Reason")
+    async def timeout(self, interaction: discord.Interaction, member: discord.Member,
+                      duration: str, reason: str = "No reason provided"):
+        if member.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message(
+                "❌ You can't time out someone with a role equal to or higher than yours.", ephemeral=True
+            )
+            return
+        delta = parse_duration(duration)
+        if delta is None:
+            await interaction.response.send_message(
+                "❌ Invalid duration. Use something like `30s`, `10m`, `1h`, or `2d`.", ephemeral=True
+            )
+            return
+        if delta > timedelta(days=28):
+            await interaction.response.send_message("❌ Timeouts can be at most **28 days**.", ephemeral=True)
+            return
+        try:
+            await member.timeout(delta, reason=f"{interaction.user}: {reason}")
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I can't time out that member (role too high?).", ephemeral=True)
+            return
+        await interaction.response.send_message(f"⏲️ Timed out **{member}** for `{duration}`.\nReason: {reason}", ephemeral=True)
+        embed = discord.Embed(title="⏲️ Member Timed Out", color=0xE67E22, timestamp=datetime.utcnow())
+        embed.add_field(name="Member", value=f"{member} ({member.id})", inline=False)
+        embed.add_field(name="Moderator", value=str(interaction.user), inline=False)
+        embed.add_field(name="Duration", value=duration, inline=False)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        await send_log(interaction.guild, embed)
+
+    @app_commands.command(name="untimeout", description="Remove a member's timeout")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    @app_commands.checks.bot_has_permissions(moderate_members=True)
+    @app_commands.describe(member="The member to un-timeout", reason="Reason")
+    async def untimeout(self, interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+        if not member.is_timed_out():
+            await interaction.response.send_message(f"ℹ️ **{member}** isn't timed out.", ephemeral=True)
+            return
+        try:
+            await member.timeout(None, reason=f"{interaction.user}: {reason}")
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I can't edit that member (role too high?).", ephemeral=True)
+            return
+        await interaction.response.send_message(f"✅ Removed timeout from **{member}**.", ephemeral=True)
+        embed = discord.Embed(title="✅ Timeout Removed", color=0x2ECC71, timestamp=datetime.utcnow())
+        embed.add_field(name="Member", value=f"{member} ({member.id})", inline=False)
+        embed.add_field(name="Moderator", value=str(interaction.user), inline=False)
+        await send_log(interaction.guild, embed)
+
+    @app_commands.command(name="unban", description="Unban a user by their ID")
+    @app_commands.checks.has_permissions(ban_members=True)
+    @app_commands.checks.bot_has_permissions(ban_members=True)
+    @app_commands.describe(user_id="The ID of the user to unban", reason="Reason")
+    async def unban(self, interaction: discord.Interaction, user_id: str, reason: str = "No reason provided"):
+        if not user_id.isdigit():
+            await interaction.response.send_message("❌ Give a numeric user ID.", ephemeral=True)
+            return
+        try:
+            await interaction.guild.unban(discord.Object(id=int(user_id)), reason=f"{interaction.user}: {reason}")
+        except discord.NotFound:
+            await interaction.response.send_message("❌ That user isn't banned (or the ID is wrong).", ephemeral=True)
+            return
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to unban.", ephemeral=True)
+            return
+        await interaction.response.send_message(f"✅ Unbanned `{user_id}`.", ephemeral=True)
+        embed = discord.Embed(title="✅ Member Unbanned", color=0x2ECC71, timestamp=datetime.utcnow())
+        embed.add_field(name="User ID", value=user_id, inline=False)
+        embed.add_field(name="Moderator", value=str(interaction.user), inline=False)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        await send_log(interaction.guild, embed)
+
+    @app_commands.command(name="slowmode", description="Set this channel's slowmode (0 to disable)")
+    @app_commands.checks.has_permissions(manage_channels=True)
+    @app_commands.checks.bot_has_permissions(manage_channels=True)
+    @app_commands.describe(seconds="Slowmode delay in seconds (0-21600)")
+    async def slowmode(self, interaction: discord.Interaction, seconds: app_commands.Range[int, 0, 21600]):
+        if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
+            await interaction.response.send_message("❌ I can't set slowmode on this channel type.", ephemeral=True)
+            return
+        try:
+            await interaction.channel.edit(slowmode_delay=seconds)
+        except (discord.Forbidden, discord.HTTPException):
+            await interaction.response.send_message("❌ I couldn't change slowmode here.", ephemeral=True)
+            return
+        if seconds == 0:
+            await interaction.response.send_message("✅ Slowmode **disabled** for this channel.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"🐌 Slowmode set to **{seconds}s** for this channel.", ephemeral=True)
+
+    @app_commands.command(name="nick", description="Change or reset a member's nickname")
+    @app_commands.checks.has_permissions(manage_nicknames=True)
+    @app_commands.checks.bot_has_permissions(manage_nicknames=True)
+    @app_commands.describe(member="The member", nickname="New nickname (leave blank to reset)")
+    async def nick(self, interaction: discord.Interaction, member: discord.Member, nickname: str = None):
+        if nickname and len(nickname) > 32:
+            await interaction.response.send_message("❌ Nicknames can be at most 32 characters.", ephemeral=True)
+            return
+        if member.top_role >= interaction.guild.me.top_role:
+            await interaction.response.send_message("❌ That member's role is too high for me to edit.", ephemeral=True)
+            return
+        try:
+            await member.edit(nick=nickname)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I couldn't change that member's nickname.", ephemeral=True)
+            return
+        if nickname:
+            await interaction.response.send_message(f"✅ Set **{member}**'s nickname to **{nickname}**.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"✅ Reset **{member}**'s nickname.", ephemeral=True)
 
     @app_commands.command(name="lock", description="Lock this channel so @everyone and Verified members can't send messages")
     @app_commands.checks.has_permissions(manage_channels=True)

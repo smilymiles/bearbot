@@ -200,6 +200,39 @@ class Admin(commands.Cog):
     async def giverole(self, interaction: discord.Interaction, member: discord.Member, role: discord.Role):
         await self._assign(interaction, member, role, missing_hint="That role doesn't exist.", check_escalation=True)
 
+    @app_commands.command(name="removerole", description="Remove a role from a member")
+    @app_commands.checks.has_permissions(manage_roles=True)
+    @app_commands.checks.bot_has_permissions(manage_roles=True)
+    @app_commands.describe(member="The member to remove the role from", role="The role to remove")
+    async def removerole(self, interaction: discord.Interaction, member: discord.Member, role: discord.Role):
+        if role >= interaction.guild.me.top_role:
+            await interaction.response.send_message(
+                f"❌ I can't manage {role.mention} — it's above (or equal to) my highest role.", ephemeral=True
+            )
+            return
+        if (role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id):
+            await interaction.response.send_message(
+                "❌ You can't remove a role equal to or higher than your own top role.", ephemeral=True
+            )
+            return
+        if role not in member.roles:
+            await interaction.response.send_message(
+                f"ℹ️ {member.mention} doesn't have {role.mention}.", ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
+        try:
+            await member.remove_roles(role, reason=f"Removed by {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ I couldn't remove that role — check my permissions and role position.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            f"✅ Removed {role.mention} from {member.mention}.", ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))

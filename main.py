@@ -28,6 +28,8 @@ EXTENSIONS = [
     "cogs.server_setup",
     "cogs.admin",
     "cogs.purge",
+    "cogs.info",
+    "cogs.utility",
     "cogs.help",
     "cogs.keepalive",
 ]
