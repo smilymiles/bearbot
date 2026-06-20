@@ -89,27 +89,49 @@ class ServerSetup(commands.Cog):
         # verify channel: visible to everyone so unverified members can click the button
         verify_channel = await get_or_create_text("verify", category)
 
-        # ── Wire up config ───────────────────────────────────────────────────────
+        # ── Wire up config (only set what isn't already configured) ───────────────
         config = load_config()
         g = guild_config(config, guild.id)
-        g["submissions_channel"] = submissions.id
-        g["log_channel"] = logs.id
+        newly_wired = []
+        already_set = []
+
+        def wire(label, key, value):
+            if value is None:
+                return
+            if key in g:
+                already_set.append(label)
+            else:
+                g[key] = value
+                newly_wired.append(label)
+
+        wire(f"Submissions → {submissions.mention}", "submissions_channel", submissions.id)
+        wire(f"Logs → {logs.mention}", "log_channel", logs.id)
         if verified:
-            g["verify_role"] = verified.id
+            wire(f"Verify role → {verified.mention}", "verify_role", verified.id)
         if participant:
-            g["submission_role"] = participant.id
+            wire(f"Submission role → {participant.mention}", "submission_role", participant.id)
         if mod_role:
-            g["mod_role"] = mod_role.id
+            wire(f"Mod role → {mod_role.mention}", "mod_role", mod_role.id)
         if admin_role:
-            g["admin_role"] = admin_role.id
+            wire(f"Admin role → {admin_role.mention}", "admin_role", admin_role.id)
         if owner_role:
-            g["owner_role"] = owner_role.id
+            wire(f"Owner role → {owner_role.mention}", "owner_role", owner_role.id)
         if booster_role:
-            g["booster_role"] = booster_role.id
-        # Turn on protection out of the box (won't override an existing config)
-        g.setdefault("antiraid", {"enabled": True, "threshold": 5, "window": 10, "action": "kick"})
-        antinuke = g.setdefault("antinuke", {"enabled": True, "threshold": 3, "window": 30, "whitelist": []})
-        # whitelist whoever ran setup so anti-nuke never quarantines them
+            wire(f"Booster role → {booster_role.mention}", "booster_role", booster_role.id)
+
+        # Protection: enable out of the box, but never override settings you already have
+        if "antiraid" in g:
+            already_set.append("Anti-raid (kept your settings)")
+        else:
+            g["antiraid"] = {"enabled": True, "threshold": 5, "window": 10, "action": "kick"}
+            newly_wired.append("Anti-raid → ON (5 joins / 10s → kick)")
+        if "antinuke" in g:
+            already_set.append("Anti-nuke (kept your settings)")
+        else:
+            g["antinuke"] = {"enabled": True, "threshold": 3, "window": 30, "whitelist": []}
+            newly_wired.append("Anti-nuke → ON (3 actions / 30s → quarantine)")
+        # always make sure whoever ran setup is whitelisted for anti-nuke
+        antinuke = g["antinuke"]
         antinuke.setdefault("whitelist", [])
         if interaction.user.id not in antinuke["whitelist"]:
             antinuke["whitelist"].append(interaction.user.id)
@@ -142,38 +164,29 @@ class ServerSetup(commands.Cog):
             pass
 
         # ── Report ───────────────────────────────────────────────────────────────
-        embed = discord.Embed(title="✅ BearBot Setup Complete", color=0x2ECC71)
-        embed.add_field(
-            name="Created",
-            value="\n".join(f"• {c}" for c in created) or "Nothing new",
-            inline=False,
+        nothing_changed = not created and not newly_wired
+        embed = discord.Embed(
+            title="✅ BearBot Setup Complete",
+            color=0x2ECC71,
+            description=("Everything was already set up — nothing to change. ✅"
+                         if nothing_changed else "Here's what I did:"),
         )
+        if created:
+            embed.add_field(name="🆕 Created", value="\n".join(f"• {c}" for c in created), inline=False)
         if existing:
-            embed.add_field(name="Reused (already existed)", value="\n".join(f"• {e}" for e in existing), inline=False)
+            embed.add_field(name="♻️ Reused (already existed)", value="\n".join(f"• {e}" for e in existing), inline=False)
         if failed:
             embed.add_field(name="⚠️ Couldn't create", value="\n".join(f"• {f}" for f in failed), inline=False)
-        embed.add_field(
-            name="Config wired up",
-            value=(
-                f"• Submissions → {submissions.mention}\n"
-                f"• Logs → {logs.mention}\n"
-                f"• Verify role → {verified.mention if verified else '*(failed)*'}\n"
-                f"• Submission role → {participant.mention if participant else '*(failed)*'}\n"
-                f"• Booster role → {booster_role.mention if booster_role else '*(failed)*'}"
-                + (f" (applied to {booster_applied} booster(s))" if booster_applied else "")
-                + f"\n• Verify panel posted in {verify_channel.mention}"
-            ),
-            inline=False,
-        )
-        embed.add_field(
-            name="🛡️ Protection enabled",
-            value=(
-                "• Anti-raid: **ON** (5 joins / 10s → kick)\n"
-                "• Anti-nuke: **ON** (3 destructive actions / 30s → quarantine)\n"
-                "*Toggle anytime with `/antiraid` and `/antinuke`.*"
-            ),
-            inline=False,
-        )
+        if newly_wired:
+            embed.add_field(name="🔧 Newly configured", value="\n".join(f"• {w}" for w in newly_wired), inline=False)
+        if already_set:
+            embed.add_field(name="✓ Already configured (left as-is)", value="\n".join(f"• {s}" for s in already_set), inline=False)
+
+        extras = [f"Verify panel ready in {verify_channel.mention}"]
+        if booster_applied:
+            extras.append(f"Booster role applied to {booster_applied} current booster(s)")
+        embed.add_field(name="Also", value="\n".join(f"• {e}" for e in extras), inline=False)
+
         embed.set_footer(text="Heads up: drag the Owner/Admin/Mod/Booster roles above other roles, and keep my role above them so I can assign them.")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
