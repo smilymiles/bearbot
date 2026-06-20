@@ -14,6 +14,7 @@ CATEGORIES = {
     "Protection": "🛡️ Protection",
     "Info": "📊 Info",
     "Utility": "🔧 Utility",
+    "Boosters": "💎 Boosts",
     "Help": "ℹ️ Help",
 }
 ORDER = list(CATEGORIES.keys())

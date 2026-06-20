@@ -30,6 +30,7 @@ EXTENSIONS = [
     "cogs.purge",
     "cogs.info",
     "cogs.utility",
+    "cogs.boosters",
     "cogs.help",
     "cogs.keepalive",
 ]
