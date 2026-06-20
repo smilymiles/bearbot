@@ -46,12 +46,16 @@ Run `/help` in your server for the full, always-current command list.
 
 ## Hosting on Render
 
-Deploy as a **Web Service** (free tier):
+A [`render.yaml`](render.yaml) Blueprint is included — connect the repo as a **Blueprint** and Render sets up the Web Service (build/start commands, health check, env vars) automatically. You only need to fill in `DISCORD_TOKEN` in the **Environment** tab afterward (it's intentionally not stored in the repo).
 
+Prefer manual setup? Create a **Web Service** (free tier) with:
 - **Build command:** `pip install -r requirements.txt`
 - **Start command:** `python main.py`
 - Set `DISCORD_TOKEN` (and optionally `GUILD_ID`) in the **Environment** tab
-- The built-in keep-alive web server + self-ping loop keeps the service from spinning down. (For extra reliability, point an [UptimeRobot](https://uptimerobot.com/) monitor at your Render URL.)
+
+The built-in keep-alive web server + self-ping loop keeps the service from spinning down. (For extra reliability, point an [UptimeRobot](https://uptimerobot.com/) monitor at your Render URL.)
+
+> ⚠️ **Persistence note:** Render's free filesystem is ephemeral — `config.json` resets on every deploy/restart. Per-server settings (channels, roles, warns) won't persist across deploys. Use a [persistent disk](https://render.com/docs/disks) (paid) or an external database if you need them to stick.
 
 ## Project structure
 

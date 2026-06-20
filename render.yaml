@@ -1,0 +1,25 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Connect this repo as a Blueprint and Render configures the service from here.
+services:
+  - type: web
+    name: bearbot
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # Secret — NOT stored in the repo. Set this in the Render dashboard
+      # (Environment tab) after the service is created.
+      - key: DISCORD_TOKEN
+        sync: false
+      # Your server ID, for instant slash-command updates. Not secret.
+      - key: GUILD_ID
+        value: "1517690357234794496"
+      # Pin the Python version so deploys are reproducible.
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+    # NOTE: Render auto-provides PORT and RENDER_EXTERNAL_URL — the keep-alive
+    # web server and self-ping loop use those automatically.
