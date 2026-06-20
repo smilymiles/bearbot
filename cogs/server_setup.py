@@ -69,6 +69,9 @@ class ServerSetup(commands.Cog):
         verified = await get_or_create_role("Verified")
         participant = await get_or_create_role("Event Participant", color=discord.Color(0x2ECC71))
 
+        # ── Booster role ─────────────────────────────────────────────────────────
+        booster_role = await get_or_create_role("Booster", color=discord.Color(0xF47FFF), hoist=True)
+
         # ── Category + channels ─────────────────────────────────────────────────
         everyone = guild.default_role
         category = await get_or_create_category("📋 GD EVENTS")
@@ -101,7 +104,27 @@ class ServerSetup(commands.Cog):
             g["admin_role"] = admin_role.id
         if owner_role:
             g["owner_role"] = owner_role.id
+        if booster_role:
+            g["booster_role"] = booster_role.id
+        # Turn on protection out of the box (won't override an existing config)
+        g.setdefault("antiraid", {"enabled": True, "threshold": 5, "window": 10, "action": "kick"})
+        antinuke = g.setdefault("antinuke", {"enabled": True, "threshold": 3, "window": 30, "whitelist": []})
+        # whitelist whoever ran setup so anti-nuke never quarantines them
+        antinuke.setdefault("whitelist", [])
+        if interaction.user.id not in antinuke["whitelist"]:
+            antinuke["whitelist"].append(interaction.user.id)
         save_config(config)
+
+        # ── Give the booster role to anyone already boosting ──────────────────────
+        booster_applied = 0
+        if booster_role:
+            for member in guild.premium_subscribers:
+                if booster_role not in member.roles:
+                    try:
+                        await member.add_roles(booster_role, reason="BearBot setup booster role")
+                        booster_applied += 1
+                    except discord.HTTPException:
+                        pass
 
         # ── Post the verification panel ──────────────────────────────────────────
         try:
@@ -132,11 +155,22 @@ class ServerSetup(commands.Cog):
                 f"• Logs → {logs.mention}\n"
                 f"• Verify role → {verified.mention if verified else '*(failed)*'}\n"
                 f"• Submission role → {participant.mention if participant else '*(failed)*'}\n"
-                f"• Verify panel posted in {verify_channel.mention}"
+                f"• Booster role → {booster_role.mention if booster_role else '*(failed)*'}"
+                + (f" (applied to {booster_applied} booster(s))" if booster_applied else "")
+                + f"\n• Verify panel posted in {verify_channel.mention}"
             ),
             inline=False,
         )
-        embed.set_footer(text="Heads up: drag the Owner/Admin/Mod roles above other roles, and keep my role high enough to manage them.")
+        embed.add_field(
+            name="🛡️ Protection enabled",
+            value=(
+                "• Anti-raid: **ON** (5 joins / 10s → kick)\n"
+                "• Anti-nuke: **ON** (3 destructive actions / 30s → quarantine)\n"
+                "*Toggle anytime with `/antiraid` and `/antinuke`.*"
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="Heads up: drag the Owner/Admin/Mod/Booster roles above other roles, and keep my role above them so I can assign them.")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
