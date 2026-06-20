@@ -27,6 +27,7 @@ EXTENSIONS = [
     "cogs.protection",
     "cogs.server_setup",
     "cogs.admin",
+    "cogs.purge",
     "cogs.help",
     "cogs.keepalive",
 ]

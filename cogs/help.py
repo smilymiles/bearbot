@@ -9,6 +9,7 @@ CATEGORIES = {
     "Events": "🎮 Events",
     "Verification": "✅ Verification",
     "Moderation": "🔨 Moderation",
+    "Purge": "🧹 Purge",
     "Admin": "👮 Roles & Bot",
     "Protection": "🛡️ Protection",
     "Help": "ℹ️ Info",
@@ -39,9 +40,9 @@ class Help(commands.Cog):
         # listed categories first (in order), then any leftovers
         ordered = [c for c in ORDER if c in groups] + [c for c in groups if c not in ORDER]
         for cog_name in ordered:
-            cmds = sorted(groups[cog_name], key=lambda c: c.name)
+            cmds = sorted(groups[cog_name], key=lambda c: c.qualified_name)
             title = CATEGORIES.get(cog_name, f"📦 {cog_name}")
-            value = "\n".join(f"`/{c.name}` — {c.description}" for c in cmds)
+            value = "\n".join(f"`/{c.qualified_name}` — {c.description}" for c in cmds)
             embed.add_field(name=title, value=value[:1024], inline=False)
 
         embed.set_footer(text=f"{sum(len(v) for v in groups.values())} commands • made for GD collab events")
