@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import config_store
 from cogs.verification import VerifyView
 
 # Windows consoles default to cp1252, which can't encode the emoji in our log prints.
@@ -47,6 +48,7 @@ class BearBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
+        await config_store.load_from_supabase()
         # register the persistent verification button so it survives restarts
         self.add_view(VerifyView())
         for ext in EXTENSIONS:
